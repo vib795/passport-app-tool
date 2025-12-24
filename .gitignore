@@ -40,3 +40,23 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Go
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+go_implementation/passport-tracker
+go_implementation/passport-tracker-*
+go_implementation/build/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/

@@ -60,6 +60,7 @@ Or use the compiled binary:
   -d, --dob string         Date of birth in DD/MM/YYYY format (required)
   -w, --wait-time int      Maximum time to wait for CAPTCHA solving (seconds) (default 120)
       --headless           Run in headless mode (not recommended)
+  -v, --verbose            Show verbose chromedp debug output
   -h, --help              help for passport-tracker
 ```
 
@@ -73,6 +74,11 @@ Basic usage:
 With custom wait time:
 ```bash
 ./passport-tracker -r 25-2055287305 -d 12/09/1994 -w 180
+```
+
+With verbose debug output (for troubleshooting):
+```bash
+./passport-tracker -r 25-2055287305 -d 12/09/1994 --verbose
 ```
 
 ## Advantages of Go Implementation

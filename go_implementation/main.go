@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ var (
 	dateOfBirth     string
 	waitTime        int
 	headless        bool
+	verbose         bool
 )
 
 type PassportTracker struct {
@@ -26,18 +29,25 @@ type PassportTracker struct {
 	dateOfBirth     string
 	waitTime        time.Duration
 	headless        bool
+	verbose         bool
 }
 
-func NewPassportTracker(ref, dob string, wait int, headless bool) *PassportTracker {
+func NewPassportTracker(ref, dob string, wait int, headless, verbose bool) *PassportTracker {
 	return &PassportTracker{
 		referenceNumber: ref,
 		dateOfBirth:     dob,
 		waitTime:        time.Duration(wait) * time.Second,
 		headless:        headless,
+		verbose:         verbose,
 	}
 }
 
 func (pt *PassportTracker) TrackApplication() (string, error) {
+	// Suppress chromedp verbose logging unless verbose flag is set
+	if !pt.verbose {
+		log.SetOutput(io.Discard)
+	}
+
 	// Setup Chrome options
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", pt.headless),
@@ -48,8 +58,15 @@ func (pt *PassportTracker) TrackApplication() (string, error) {
 	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer cancel()
 
-	ctx, cancel := chromedp.NewContext(allocCtx)
-	defer cancel()
+	// Create context with custom logging
+	var ctx context.Context
+	var ctxCancel context.CancelFunc
+	if pt.verbose {
+		ctx, ctxCancel = chromedp.NewContext(allocCtx)
+	} else {
+		ctx, ctxCancel = chromedp.NewContext(allocCtx, chromedp.WithLogf(func(string, ...interface{}) {}))
+	}
+	defer ctxCancel()
 
 	// Set timeout
 	ctx, cancel = context.WithTimeout(ctx, pt.waitTime+30*time.Second)
@@ -130,6 +147,7 @@ Example:
 	rootCmd.Flags().StringVarP(&dateOfBirth, "dob", "d", "", "Date of birth in DD/MM/YYYY format (required)")
 	rootCmd.Flags().IntVarP(&waitTime, "wait-time", "w", 120, "Maximum time to wait for CAPTCHA solving (seconds)")
 	rootCmd.Flags().BoolVar(&headless, "headless", false, "Run in headless mode (not recommended)")
+	rootCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show verbose chromedp debug output")
 
 	rootCmd.MarkFlagRequired("reference")
 	rootCmd.MarkFlagRequired("dob")
@@ -148,7 +166,7 @@ func runTracker() {
 	fmt.Printf("Reference Number: %s\n", color.YellowString(referenceNumber))
 	fmt.Printf("Date of Birth: %s\n\n", color.YellowString(dateOfBirth))
 
-	tracker := NewPassportTracker(referenceNumber, dateOfBirth, waitTime, headless)
+	tracker := NewPassportTracker(referenceNumber, dateOfBirth, waitTime, headless, verbose)
 	status, err := tracker.TrackApplication()
 
 	if err != nil {
