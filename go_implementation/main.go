@@ -91,15 +91,30 @@ func (pt *PassportTracker) TrackApplication() (string, error) {
 	color.Yellow("Please solve the reCAPTCHA in the browser window...")
 	color.Yellow(strings.Repeat("=", 60) + "\n")
 
-	// Wait for CAPTCHA to be solved
-	err = chromedp.Run(ctx,
-		chromedp.WaitVisible(`#g-recaptcha-response`, chromedp.ByQuery),
-		chromedp.Sleep(2*time.Second), // Give user time to see the form
-	)
+	// Wait for CAPTCHA to be solved by polling for a value in the response field
+	startTime := time.Now()
+	captchaSolved := false
 
-	if err != nil {
-		return "", fmt.Errorf("CAPTCHA not solved: %w", err)
+	for time.Since(startTime) < pt.waitTime {
+		var captchaValue string
+		err = chromedp.Run(ctx,
+			chromedp.Evaluate(`document.getElementById('g-recaptcha-response').value`, &captchaValue),
+		)
+
+		if err == nil && len(captchaValue) > 0 {
+			captchaSolved = true
+			break
+		}
+
+		time.Sleep(500 * time.Millisecond)
 	}
+
+	if !captchaSolved {
+		return "", fmt.Errorf("CAPTCHA not solved within %v seconds", int(pt.waitTime.Seconds()))
+	}
+
+	// Small delay to ensure stability
+	time.Sleep(1 * time.Second)
 
 	color.Green("✓ CAPTCHA solved!\n")
 	color.Cyan("Submitting form...")
@@ -114,13 +129,49 @@ func (pt *PassportTracker) TrackApplication() (string, error) {
 		return "", fmt.Errorf("error submitting form: %w", err)
 	}
 
-	// Extract status
+	// Try to extract status message or error
+	var foundStatus bool
+
+	// First check for error messages
 	err = chromedp.Run(ctx,
-		chromedp.Text(`p`, &statusText, chromedp.ByQuery),
+		chromedp.Evaluate(`
+			(function() {
+				// Check for "Invalid Request" or error messages
+				var headings = document.querySelectorAll('h1, h2, h3');
+				for (var i = 0; i < headings.length; i++) {
+					if (headings[i].textContent.includes('Invalid Request') ||
+					    headings[i].textContent.includes('Error')) {
+						return headings[i].textContent.trim();
+					}
+				}
+
+				// Look for status message in paragraphs
+				var paragraphs = document.querySelectorAll('p');
+				for (var i = 0; i < paragraphs.length; i++) {
+					var text = paragraphs[i].textContent.trim();
+					if (text.length > 10 &&
+					    (text.toLowerCase().includes('application') ||
+					     text.toLowerCase().includes('passport') ||
+					     text.toLowerCase().includes('reference'))) {
+						return text;
+					}
+				}
+
+				return '';
+			})()
+		`, &statusText),
 	)
 
-	if err != nil {
-		return "", fmt.Errorf("error extracting status: %w", err)
+	if err == nil && len(statusText) > 0 {
+		foundStatus = true
+		// Check if it's an error message
+		if strings.Contains(statusText, "Invalid Request") {
+			return "", fmt.Errorf("form submission failed: %s - Please verify your reference number and date of birth are correct", statusText)
+		}
+	}
+
+	if !foundStatus {
+		return "", fmt.Errorf("could not extract status message from the page")
 	}
 
 	// Keep browser open for user to see
