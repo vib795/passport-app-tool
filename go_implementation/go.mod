@@ -1,4 +1,4 @@
-module github.com/yourusername/passport-tracker
+module github.com/vib795/passport-tracker
 
 go 1.21
 
